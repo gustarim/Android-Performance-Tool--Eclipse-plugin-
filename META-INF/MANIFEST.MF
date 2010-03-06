@@ -1,0 +1,14 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Apt
+Bundle-SymbolicName: com.android.ide.eclipse.apt; singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Activator: com.android.ide.eclipse.apt.AptPlugin
+Bundle-Vendor: ANDROID
+Require-Bundle: org.eclipse.ui,
+ org.eclipse.core.runtime,
+ org.eclipse.core.resources
+Bundle-RequiredExecutionEnvironment: J2SE-1.5
+Bundle-ActivationPolicy: lazy
+Bundle-ClassPath: lib/asm-all-3.2.jar,
+ .

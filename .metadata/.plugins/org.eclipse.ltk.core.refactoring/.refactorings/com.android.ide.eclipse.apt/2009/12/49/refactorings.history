@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename type &apos;com.android.ide.eclipse.apt.Activator&apos; to &apos;AptPlugin&apos;&#x0A;- Original project: &apos;com.android.ide.eclipse.apt&apos;&#x0A;- Original element: &apos;com.android.ide.eclipse.apt.Activator&apos;&#x0A;- Renamed element: &apos;com.android.ide.eclipse.apt.AptPlugin&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename type &apos;Activator&apos;" flags="589830" id="org.eclipse.jdt.ui.rename.type" input="/src&lt;com.android.ide.eclipse.apt{Activator.java[Activator" matchStrategy="1" name="AptPlugin" qualified="false" references="true" similarDeclarations="false" stamp="1260032080966" textual="false" version="1.0"/>
+</session>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring accessors="true" comment="Delete 1 element(s) from project &apos;AndroidPerformanceTool&apos;&#x0A;- Original project: &apos;AndroidPerformanceTool&apos;&#x0A;- Original element: &apos;AndroidPerformanceTool/src/ch.usi.inf.gustarim.apt.crawel&apos;" description="Delete element" element1="/src&lt;ch.usi.inf.gustarim.apt.crawel" elements="1" flags="589830" id="org.eclipse.jdt.ui.delete" resources="0" stamp="1257250412497" subPackages="false" version="1.0"/>
+</session>

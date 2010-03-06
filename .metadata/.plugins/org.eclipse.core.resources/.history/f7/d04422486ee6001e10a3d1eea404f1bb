@@ -1,0 +1,162 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.internal.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+
+import com.android.ide.eclipse.apt.internal.crawler.ClassCrawler;
+
+/**
+ * This analyzer check if private class fields are accessed by inner classes 
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#package_inner">Use Package Scope with Inner Classes</a> 
+ * @author Mattia Gustarini
+ *
+ */
+final class InnerClassAnalyzer extends SpecificAnalyzer {
+	private ClassNode mInnerClass;
+	private ClassNode mOuterClass;
+	
+	public InnerClassAnalyzer() {
+		super("Inner Class", "use Package Scope with Inner Classes: parent Class field accessed " +
+				"by an Inner Class should be protected instead of private!");
+	}
+	
+	@Override
+	public void analyse(ClassNode classNode) {
+		if (setOuterClassNode(classNode)) {
+			mInnerClass = classNode;
+			super.analyse(classNode);	
+		}
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(MethodNode methodNode) {
+		final LinkedList<Problem> problems = new LinkedList<Problem>();
+		final InsnList instructions = methodNode.instructions;
+		for (int i = 0; i < instructions.size(); i++) {
+			final AbstractInsnNode insnNode = instructions.get(i);
+			if (insnNode.getOpcode() == Opcodes.INVOKESTATIC) {
+				final MethodInsnNode method = (MethodInsnNode)insnNode;
+				if (isStaticAccess(method)) {
+					if (confirmParentClassAccess(methodNode, method)) {
+						final AbstractInsnNode inst = retrieveMethodOrField(method);
+						final int type = inst.getType();
+						if (type == AbstractInsnNode.FIELD_INSN || 
+								type == AbstractInsnNode.METHOD_INSN) {
+							final Problem problem = new Problem(inst);
+							System.out.println("c" + problem.mLine);
+							problems.add(problem);
+						}
+					}
+				}
+			}
+		}
+		return problems;
+	}
+	
+	private boolean setOuterClassNode(final ClassNode classNode) {
+		boolean inner = false;
+		final String name = classNode.name;
+		final int dollar = name.lastIndexOf('$');
+		if (dollar > -1) {
+			String outerClassName = "";
+			final String n = name.substring(dollar);
+			if (n.matches("[0-9]+")) {
+				//must be anonymous inner class
+				if (classNode.outerClass != null) {
+					outerClassName = classNode.outerClass;
+				}
+				else {
+					outerClassName = name.substring(0, dollar);
+				}
+			}
+			else {
+				outerClassName = name.substring(0, dollar);
+			}
+			mOuterClass = findOuterClassNode(outerClassName);
+			if (mOuterClass != null) {
+				inner = true;
+			}
+		}
+		return inner;
+	}
+	
+	private ClassNode findOuterClassNode(final String className) {
+		ClassNode parentClass = null;
+		final Collection<ClassNode> classes = ClassCrawler.sClassNodes;
+		for (ClassNode classNode : classes) {
+			if (classNode.name.equals(className)) {
+				parentClass = classNode;
+				break;
+			}
+		}
+		return parentClass;
+	}
+	
+	private boolean isStaticAccess(final MethodInsnNode method) {
+		final String owner = method.owner;
+		final String name = method.name;
+		final String desc = method.desc;
+		
+		return owner.equals(mOuterClass.name) && name.matches("access\\$\\d+") &&
+			desc.startsWith("(L" + mOuterClass.name + ";");
+	}
+	
+	private boolean confirmParentClassAccess(final MethodNode methodNode, final MethodInsnNode method) {
+		final String methodNodeName = methodNode.name;
+		AbstractInsnNode prev = method.getPrevious();
+		boolean result = false;
+		while (!result) {
+			if (methodNodeName.startsWith("<init>")) {
+				if (prev.getOpcode() == Opcodes.ALOAD) {
+					final VarInsnNode varInsn = (VarInsnNode)prev;
+					result = varInsn.var == 1;
+				}
+			}
+			else {
+				if (prev.getOpcode() == Opcodes.GETFIELD) {
+					final FieldInsnNode getField = (FieldInsnNode)prev;
+					final String field = getField.owner + getField.name;
+					final String testField = mInnerClass.name + "this$0";
+					result = field.equals(testField);
+				}
+			}
+			if (prev.getType() == AbstractInsnNode.LINE) {
+				break;
+			}
+			else {
+				prev = prev.getPrevious();
+			}
+		}
+		return result;
+	}
+	
+	private AbstractInsnNode retrieveMethodOrField(final MethodInsnNode method) {
+		final String name = method.name;
+		final List<MethodNode> meInsnNodes = (List<MethodNode>)mOuterClass.methods;
+		AbstractInsnNode result = null;
+		for (MethodNode methodNode : meInsnNodes) {
+			if (methodNode.name.equals(name)) {
+				final InsnList instructions = methodNode.instructions;
+				result = instructions.getLast().getPrevious();
+			}
+		}
+		return result;
+	}
+}

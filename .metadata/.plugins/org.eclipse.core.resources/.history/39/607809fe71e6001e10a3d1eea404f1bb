@@ -1,0 +1,99 @@
+/**
+ * 
+ */
+package ch.usi.inf.gustarim.apt.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+
+import org.jdom.Element;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodNode;
+
+import com.android.ide.eclipse.apt.internal.analysis.SpecificAnalyzer.Problem;
+
+/**
+ * This analyzer checks if there are possible constant declarations that are not final
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#use_final">Declare Constants Final</a>
+ * @author Mattia Gustarini
+ */
+public final class ConstantFinalAnalyzer extends SpecificAnalyzer {
+	protected final class ConstantProblem extends Problem {
+		private final String mFieldName;
+		
+		public ConstantProblem(final AbstractInsnNode insnNode, final String fieldName) {
+			super(insnNode);
+			mFieldName = fieldName;
+			Analyzer.printMessage("Found static, not final field declaration at line: " + mLine + " field " + mFieldName +
+					". If this field is a constant should be declared final!");
+		}
+		
+		@Override
+		public Element toXmlElement() {
+			final Element element = super.toXmlElement();
+			element.setAttribute("fieldName", mFieldName);
+			return element;
+		}
+	}
+	
+	private ClassNode mCurrentClass;
+
+	public ConstantFinalAnalyzer() {
+		super("ConstantsFinal", "Declare constants final!");
+	}
+	
+	@Override
+	protected Collection<Problem> analyzeClass(final ClassNode classNode) {
+		final Collection<Problem> problems = new LinkedList<Problem>();
+		if ((classNode.access & Opcodes.ACC_ENUM) == 0) {
+			final List<MethodNode> methodNodes = (List<MethodNode>)classNode.methods;
+			for (final MethodNode methodNode : methodNodes) {
+				if (methodNode.name.equals("<clinit>")) {
+					final Collection<Problem> foundProblems = analyzeMethod(methodNode);
+					problems.addAll(foundProblems);
+				}
+			}
+		}
+		return problems;
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(MethodNode methodNode) {
+		final LinkedList<Problem> problems = new LinkedList<Problem>();
+		final InsnList instructions = methodNode.instructions;
+		for (int i = 0; i < instructions.size(); i++) {
+			final AbstractInsnNode insnNode = instructions.get(i);
+			if (insnNode.getOpcode() == Opcodes.PUTSTATIC) {
+				final FieldInsnNode field = (FieldInsnNode)insnNode;
+				final String fieldName = field.name;
+				if (!isFinal(fieldName)) {
+					final Problem problem = new ConstantProblem(insnNode, fieldName);
+					problems.add(problem);					
+				}
+			}
+		}
+		return problems;
+	}
+
+	private boolean isFinal(final String fieldName) {
+		boolean isFinal = false;
+		final List<FieldNode> fields = (List<FieldNode>)mCurrentClass.fields;
+		for (final FieldNode fieldNode : fields) {
+			if (fieldNode.name.equals(fieldName)) {
+				isFinal = (fieldNode.access & Opcodes.ACC_FINAL) != 0;
+				break;
+			}
+		}
+		return isFinal;
+	}
+}

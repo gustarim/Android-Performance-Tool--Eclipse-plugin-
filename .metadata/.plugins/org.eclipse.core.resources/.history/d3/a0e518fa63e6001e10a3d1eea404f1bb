@@ -1,0 +1,61 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.internal.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodNode;
+
+/**
+ * This analyzer checks if there are possible constant declarations that are not final
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#use_final">Declare Constants Final</a>
+ * @author Mattia Gustarini
+ */
+public final class ConstantFinalAnalyzer extends SpecificAnalyzer {
+
+	public ConstantFinalAnalyzer() {
+		super("ConstantsFinal", "if it is a constant declare it final!");
+	}
+	
+	@Override
+	protected Collection<Problem> analyzeClass(final ClassNode classNode) {
+		final Collection<Problem> problems = new LinkedList<Problem>();
+		if ((classNode.access & Opcodes.ACC_ENUM) == 0) {
+			final List<MethodNode> methodNodes = (List<MethodNode>)classNode.methods;
+			for (final MethodNode methodNode : methodNodes) {
+				if (methodNode.name.equals("<clinit>")) {
+					final Collection<Problem> foundProblems = analyzeMethod(methodNode);
+					problems.addAll(foundProblems);
+				}
+			}
+		}
+		return problems;
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(final MethodNode methodNode) {
+		final LinkedList<Problem> problems = new LinkedList<Problem>();
+		final InsnList instructions = methodNode.instructions;
+		for (int i = 0; i < instructions.size(); i++) {
+			final AbstractInsnNode insnNode = instructions.get(i);
+			if (insnNode.getOpcode() == Opcodes.PUTSTATIC) {
+				final Problem problem = new Problem(insnNode);
+				problems.add(problem);
+			}
+		}
+		return problems;
+	}
+
+}

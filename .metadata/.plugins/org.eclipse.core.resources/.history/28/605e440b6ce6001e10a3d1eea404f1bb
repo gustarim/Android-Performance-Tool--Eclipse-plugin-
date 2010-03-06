@@ -1,0 +1,73 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.internal.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+
+/**
+ * This analyzer checks if there are virtual methods that can be made static
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#prefer_static">Prefer Static Over Virtual</a>
+ * @author Mattia Gustarini
+ * This analyzer can give false positive in case of Override methods that doesn't access the object instance in its body
+ */
+public final class StaticVirtualAnalyzer extends SpecificAnalyzer {
+	protected final class StaticVirtualProblem extends Problem {
+
+		public StaticVirtualProblem(final AbstractInsnNode insnNode) {
+			super(insnNode);
+			mLine -= 1;
+		}
+	}
+	
+	public StaticVirtualAnalyzer() {
+		super("Prefer Static Over Virtual", "if a method doesn't access object fields make it static!");
+	}
+	
+	@Override
+	protected Collection<Problem> analyzeClass(final ClassNode classNode) {
+		final Collection<Problem> problems = new LinkedList<Problem>();
+		if ((classNode.access & Opcodes.ACC_INTERFACE) == 0) {
+			problems.addAll(super.analyzeClass(classNode));
+		}
+		return problems;
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(final MethodNode methodNode) {
+		final Collection<Problem> problems = new LinkedList<Problem>();
+		final int acc = methodNode.access;
+		if ((acc & Opcodes.ACC_STATIC) == 0 && (acc & Opcodes.ACC_ABSTRACT) == 0) {
+			final InsnList instructions = methodNode.instructions;
+			//find if a method load this (ALOAD 0)
+			boolean aload0 = false;
+			for (int i = 0; i < instructions.size(); i++) {
+				final AbstractInsnNode instruction = instructions.get(i);
+				if (instruction.getOpcode() == Opcodes.ALOAD) {
+					final VarInsnNode aload = (VarInsnNode)instruction;
+					aload0 = aload.var == 0;
+					if (aload0) {
+						break;
+					}
+				}
+			}
+			if (!aload0) {
+				final Problem problem = new Problem(instructions.get(1));
+				problems.add(problem);
+			}
+		}
+		return problems;
+	}
+}

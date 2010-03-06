@@ -1,0 +1,196 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.internal.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+
+/**
+ * 
+ * This analyzer checks if PURE getters and setters are used to access and to set class fields internally in the same class 
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#internal_get_set">Avoid Internal Getters/Setters</a>
+ * @author Mattia Gustarini
+ *
+ */
+public final class InternalGetSetAnalyzer extends SpecificAnalyzer {
+	private ClassNode mCurrentClass;
+	private LinkedList<String> mSeenNormalMethods;
+	private LinkedList<String> mSeenGetSetMethods;
+	
+	public InternalGetSetAnalyzer() {
+		super("Internal Getters/Setters", "Avoid Internal Getters/Setters: set and access Class Fields in a direct way!");
+		mSeenNormalMethods = new LinkedList<String>();
+		mSeenGetSetMethods = new LinkedList<String>();
+	}
+	
+	/* (non-Javadoc)
+	 * @see com.android.ide.eclipse.apt.internal.analysis.SpecificAnalyzer#analyzeClass(org.objectweb.asm.tree.ClassNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeClass(ClassNode classNode) {
+		mCurrentClass = classNode;
+		mSeenNormalMethods = new LinkedList<String>();
+		mSeenGetSetMethods = new LinkedList<String>();
+		return super.analyzeClass(classNode);
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(MethodNode methodNode) {
+		final Collection<Problem> problems = new LinkedList<Problem>();
+		final InsnList instructions = methodNode.instructions;
+		for (int i = 0; i < instructions.size(); i++) {
+			final AbstractInsnNode instruction = instructions.get(i);
+			final int op = instruction.getOpcode();
+			if (op == Opcodes.INVOKESTATIC || op == Opcodes.INVOKEVIRTUAL) {
+				final MethodInsnNode method = (MethodInsnNode)instruction;
+				if (isGetterOrSetter(method)) {
+					final Problem problem = new Problem(instruction);
+					problems.add(problem);
+				}
+			}
+		}
+		return problems;
+	}
+
+	/**
+	 * Checks if a method is a getter or a setter
+	 * @param method The method to be checked
+	 * @return True if a method is a getter/setter, false otherwise
+	 */
+	private boolean isGetterOrSetter(final MethodInsnNode method) {
+		final String owner = method.owner;
+		final String methodName = owner + method.name + method.desc;
+		if (mSeenNormalMethods.contains(methodName)) {
+			return false;
+		}
+		if (mSeenGetSetMethods.contains(methodName)) {
+			return true;
+		}
+		boolean result = false;
+		if (owner.equals(mCurrentClass.name)) {
+			final MethodNode methodTest = findMethod(methodName);
+			if (methodTest != null) {
+				result = isGetter(methodTest);
+				if (!result) {
+					result = isSetter(methodTest);
+				}
+			}
+		}
+		
+		if (result) {
+			mSeenGetSetMethods.add(methodName);
+		}
+		else {
+			mSeenNormalMethods.add(methodName);
+		}
+		return result;
+	}
+
+	/**
+	 * Finds a given method defined by its name encoded as a string
+	 * @param methodName The name of the method
+	 * @return The method node if exists, null otherwise
+	 */
+	private MethodNode findMethod(final String methodName) {
+		MethodNode method = null;
+		final List<MethodNode> methodNodes = (List<MethodNode>)mCurrentClass.methods;
+		for (final MethodNode methodNode : methodNodes) {
+			final String name = mCurrentClass.name + methodNode.name + methodNode.desc;
+			if (name.equals(methodName)) {
+				method = methodNode;
+			}
+		}
+		return method;
+	}
+
+	private boolean isGetter(final MethodNode methodTest) {
+		boolean getter = false;
+		final String desc = methodTest.desc;
+		final Type[] arguments = Type.getArgumentTypes(desc);
+		final Type returnType = Type.getReturnType(desc);
+		if (arguments.length == 0 && returnType.getSort() != Type.VOID) {
+			final InsnList instructions = methodTest.instructions;
+			//three next to skip label and line number instructions
+			final AbstractInsnNode first = instructions.getFirst().getNext().getNext();
+			final int returnOp = returnType.getOpcode(Opcodes.IRETURN);
+			final int firstOp = first.getOpcode();
+			//check for static setter
+			if ((Opcodes.ACC_STATIC & methodTest.access) == 0) {
+				if (firstOp == Opcodes.ALOAD) {
+					final AbstractInsnNode second = first.getNext();
+					if (second.getOpcode() == Opcodes.GETFIELD) {
+						final AbstractInsnNode third = second.getNext();
+						if (third.getOpcode() == returnOp) {
+							getter = true;
+						}
+					}
+				}
+			}
+			else {
+				if (firstOp == Opcodes.GETSTATIC) {
+					final AbstractInsnNode second = first.getNext();
+					if (second.getOpcode() == returnOp) {
+						getter = true;
+					}
+				}
+			}
+		}
+		return getter;
+	}
+	
+	private boolean isSetter(final MethodNode methodTest) {
+		boolean setter = false;
+		final String desc = methodTest.desc;
+		final Type[] arguments = Type.getArgumentTypes(desc);
+		final Type returnType = Type.getReturnType(desc);
+		if (arguments.length == 1 && returnType.getSort() == Type.VOID) {
+			final InsnList instructions = methodTest.instructions;
+			//skip label and line number instructions
+			final AbstractInsnNode first = instructions.getFirst().getNext().getNext();
+			final int loadOp = arguments[0].getOpcode(Opcodes.ILOAD);
+			final int firstOp = first.getOpcode();
+			//check for static setter
+			if ((Opcodes.ACC_STATIC & methodTest.access) == 0) {
+				if (firstOp == Opcodes.ALOAD) {
+					final AbstractInsnNode second = first.getNext();
+					if (second.getOpcode() == loadOp) {
+						final AbstractInsnNode third = second.getNext();
+						if (third.getOpcode() == Opcodes.PUTFIELD) {
+							//three next to skip label and line number instructions
+							final AbstractInsnNode fourth = third.getNext().getNext().getNext();
+							if (fourth.getOpcode() == Opcodes.RETURN) {
+								setter = true;
+							}
+						}
+					}
+				}
+			}
+			else {
+				if (firstOp == loadOp) {
+					final AbstractInsnNode second = first.getNext();
+					if (second.getOpcode() == Opcodes.PUTSTATIC) {
+						final AbstractInsnNode third = second.getNext().getNext().getNext();
+						if (third.getOpcode() == Opcodes.RETURN) {
+							setter = true;
+						}
+					}
+				}
+			}
+		}
+		return setter;
+	}
+}

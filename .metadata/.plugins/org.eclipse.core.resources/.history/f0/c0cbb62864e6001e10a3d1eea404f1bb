@@ -1,0 +1,55 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.internal.analysis;
+
+import java.util.Collection;
+import java.util.LinkedList;
+
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+
+/**
+ * This analyzer checks if there are use of for each loops with iterable objects
+ * following the guideline:<br/>
+ * @see <a href="http://developer.android.com/guide/practices/design/performance.html#foreach">Use Enhanced For Loop Syntax With Caution</a>
+ * @author Mattia Gustarini
+ */
+public final class EnhancedForLoop extends SpecificAnalyzer {
+	private static final String sIteratorClass = "java/util/Iterator";
+
+	public EnhancedForLoop() {
+		super("Enhanced For Loop", "Use for each loops with caution, because it creates additional objects (i.e. Iterator)");
+	}
+
+	/* (non-Javadoc)
+	 * @see ch.usi.inf.gustarim.apt.analysis.SpecificAnalyzer#analyzeMethod(org.objectweb.asm.tree.MethodNode)
+	 */
+	@Override
+	protected Collection<Problem> analyzeMethod(MethodNode methodNode) {
+		final LinkedList<Problem> problems = new LinkedList<Problem>();
+		final LinkedList<Problem> iterators = new LinkedList<Problem>();
+		final InsnList instructions = methodNode.instructions;
+		for (int i = 0; i < instructions.size(); i++) {
+			final AbstractInsnNode insnNode = instructions.get(i);
+			if (insnNode.getOpcode() == Opcodes.INVOKEINTERFACE) {
+				final MethodInsnNode interfaceInst = (MethodInsnNode)insnNode;
+				if (interfaceInst.owner.equals(sIteratorClass)) {
+					final Problem problem = new Problem(insnNode);
+					if (iterators.contains(problem)) {
+						iterators.remove(problem);
+						problems.add(problem);
+					}
+					else {
+						iterators.add(problem);						
+					}
+				}
+			}
+		}
+		return problems;
+	}
+
+}

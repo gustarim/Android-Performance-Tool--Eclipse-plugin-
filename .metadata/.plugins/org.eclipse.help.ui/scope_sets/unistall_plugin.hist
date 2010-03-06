@@ -1,0 +1,4 @@
+#Sun Nov 08 20:00:07 CET 2009
+__DEFAULT__=false
+org.eclipse.help.ui.localSearch.master=true
+expression=unistall plugin

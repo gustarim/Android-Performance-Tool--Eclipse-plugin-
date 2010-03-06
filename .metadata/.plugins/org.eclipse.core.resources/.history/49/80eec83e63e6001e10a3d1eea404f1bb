@@ -1,0 +1,77 @@
+/**
+ * 
+ */
+package com.android.ide.eclipse.apt.analysis;
+
+import java.io.IOException;
+import java.util.Collection;
+
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Path;
+import org.objectweb.asm.tree.ClassNode;
+
+import com.android.ide.eclipse.apt.analysis.SpecificAnalyzer.Problem;
+
+/**
+ * This class performs all the analysis in order to cover the guidelines 
+ * suggested to obtain good performances in an Android application.
+ * @author Mattia Gustarini
+ *
+ */
+public final class Analyzer {
+	private final static SpecificAnalyzer[] sAnalyzers = {
+		new VirtualInterfaceAnalyzer(),
+		new InnerClassAnalyzer(),
+		new FloatAnalyzer(),
+		new InternalGetSetAnalyzer(),
+		new EnumAnalyzer(),
+		new StaticVirtualAnalyzer(),
+		new ConstantFinalAnalyzer(),
+		new EnhancedForLoop()
+	};
+	
+	/**
+	 * Start the analysis of the whole project using all the implemented specific analyzers
+	 * @throws IOException 
+	 */
+	public static void analyseProject(final IProject project, final Collection<ClassNode> classNodes) throws IOException {
+		for (final ClassNode classNode : classNodes) {
+			for (final SpecificAnalyzer analyzer : sAnalyzers) {
+				analyzer.analyse(classNode);
+				final Collection<Problem> problems = analyzer.getProblems();
+				if (!problems.isEmpty()) {
+					final IResource problemResource = getProblemResource(project, classNode);
+					if (problemResource != null) {
+						for (final Problem problem : problems) {
+							problem.setMarker(problemResource);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	private static IResource getProblemResource(final IProject project, final ClassNode classNode) {
+		final IPath resourcePath = getResourcePath(classNode.name);
+		final IFolder srcFolder = project.getFolder("src");
+		IResource resource = null;
+		if (srcFolder.exists()) {
+			resource = srcFolder.findMember(resourcePath);
+		}
+		return resource;
+	}
+	
+	private static IPath getResourcePath(final String resourcePath) {
+		String resourceName = resourcePath;
+		final int dollar = resourcePath.lastIndexOf('$');
+		if (dollar > -1) {
+			resourceName = resourcePath.substring(0, dollar);
+		}
+		resourceName = resourceName + ".java";
+		final Path path = new Path(resourceName);
+		return path;
+	}
+}
